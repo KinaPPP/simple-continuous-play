@@ -8,10 +8,11 @@
   const WATCH_CREDITS_BTN_ID = 'atvwebplayersdk-watch-credits-button';
   const HIDE_RECOMMENDATIONS_SELECTOR = 'button[aria-label="非表示"]';
   const STOP_AUTOPLAY_SELECTOR = 'button[aria-label="Stop Autoplay"]';
+  const SKIP_INTRO_SELECTOR = 'button[aria-label="イントロをスキップ"]';
 
   const POLL_INTERVAL_MS = 400; // MutationObserverの取りこぼし対策の定期チェック間隔
   const ADVANCE_RETRY_INTERVAL_MS = 500; // ended後、次のエピソードボタンを探すリトライ間隔
-  const ADVANCE_RETRY_MAX = 10; // 最大リトライ回数(合計5秒ほど)
+  const ADVANCE_RETRY_MAX = 20; // 最大リトライ回数(合計10秒ほど)
 
   let enabled = true; // popupのトグルで上書きされる
   let creditsHandled = false; // このエピソードで「クレジットを観る」を処理済みか
@@ -19,11 +20,26 @@
   let recsHidden = false; // 「あなたにおすすめの商品」を非表示済みか(映画・TV共通)
   let autoplayStopped = false; // 映画の「Stop Autoplay」を処理済みか
   let currentVideoSrcMarker = null;
+  let lastKnownTime = 0;
+  let lastKnownDuration = 0;
+  const BACKWARD_JUMP_THRESHOLD_SEC = 20; // これ以上巻き戻ったら新しいエピソード開始とみなす
+  const DURATION_CHANGE_THRESHOLD_SEC = 5; // 尺がこれ以上変わったら新しいエピソードとみなす
+  const BOUNDARY_CONFIRM_TICKS = 3; // 巻き戻り/尺変化がこの回数連続で観測されたら確定(瞬間的なブレを無視)
+  const SELF_ACTION_SUPPRESS_MS = 4000; // 自分でボタンをクリックした直後はこの時間、境界判定を止める
+  let boundaryCandidateTicks = 0;
+  let suppressBoundaryUntil = 0;
+  let introSkipButtonVisible = false; // 「イントロをスキップ」が今表示中か(出現の立ち上がりだけを検知するため)
   let advanceRetryTimer = null;
   let advanceRetryCount = 0;
 
   function log(...args) {
     console.log('[シンプル連続再生]', ...args);
+  }
+
+  // ---- 自分自身のクリック直後は境界判定を一時停止する(誤検知の連鎖防止) ----
+  function suppressBoundaryChecks() {
+    suppressBoundaryUntil = Date.now() + SELF_ACTION_SUPPRESS_MS;
+    boundaryCandidateTicks = 0;
   }
 
   // ---- 設定読み込み ----
@@ -51,6 +67,7 @@
     recsHidden = false;
     autoplayStopped = false;
     advanceRetryCount = 0;
+    boundaryCandidateTicks = 0;
     if (advanceRetryTimer) {
       clearInterval(advanceRetryTimer);
       advanceRetryTimer = null;
@@ -69,6 +86,7 @@
       creditsHandled = true;
       log('「クレジットを観る」ボタンを検知 → 自動クリックしてED自動スキップをキャンセルします');
       btn.click();
+      suppressBoundaryChecks();
     }
   }
 
@@ -82,6 +100,7 @@
       recsHidden = true;
       log('「非表示」ボタンを検知 → 自動クリックして「あなたにおすすめの商品」を畳みます');
       btn.click();
+      suppressBoundaryChecks();
     }
   }
 
@@ -94,19 +113,46 @@
       autoplayStopped = true;
       log('「Stop Autoplay」ボタンを検知 → 自動クリックして次作への自動遷移をキャンセルします');
       btn.click();
+      suppressBoundaryChecks();
     }
   }
 
   // ---- コントロールバーを一瞬表示させる(次のエピソードボタンがマウスホバー時のみDOMに存在する場合の対策) ----
-  function nudgePlayerControls() {
-    const player = document.querySelector('video')?.closest('div') || document.body;
-    ['mousemove', 'mouseover'].forEach((type) => {
-      player.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  // 座標なしのイベントだと「カーソルがプレイヤー領域内にあるか」判定に引っかかって
+  // コントロールバーが実際には表示されないことがあるため、動画の中心座標を指定して送る。
+  function nudgePlayerControls(video) {
+    if (!video) return;
+    const rect = video.getBoundingClientRect();
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    };
+    const targets = [video, video.parentElement, document].filter(Boolean);
+    const types = ['pointermove', 'mousemove', 'mouseover', 'mouseenter'];
+    targets.forEach((target) => {
+      types.forEach((type) => {
+        try {
+          target.dispatchEvent(new MouseEvent(type, opts));
+        } catch (e) {
+          /* 一部のイベントタイプ/ターゲットの組み合わせは無視してよい */
+        }
+      });
     });
   }
 
+  // ---- 診断用: 次のエピソードボタンが見つからなかった時、その瞬間存在するボタンをログに出す ----
+  function logAvailableButtonsForDebug() {
+    const labels = Array.from(document.querySelectorAll('button[aria-label], button[id]'))
+      .map((b) => b.id || b.getAttribute('aria-label'))
+      .filter(Boolean);
+    log('現在DOM上にあるボタン一覧(診断用):', labels);
+  }
+
   // ---- 動画が本当に終わったら「次のエピソード」を自動クリック(見つからない場合はリトライ) ----
-  function handleVideoEnded() {
+  function handleVideoEnded(video) {
     if (!enabled || advanceHandled) return;
 
     advanceRetryCount = 0;
@@ -114,7 +160,7 @@
 
     advanceRetryTimer = setInterval(() => {
       advanceRetryCount++;
-      nudgePlayerControls();
+      nudgePlayerControls(video);
 
       const btn = document.getElementById(NEXT_EPISODE_BTN_ID);
       if (btn) {
@@ -123,6 +169,7 @@
         advanceRetryTimer = null;
         log(`動画終了を検知 → 次のエピソードへ自動遷移します(${advanceRetryCount}回目で検出)`);
         btn.click();
+        suppressBoundaryChecks();
         return;
       }
 
@@ -130,33 +177,97 @@
         clearInterval(advanceRetryTimer);
         advanceRetryTimer = null;
         log('動画は終了しましたが「次のエピソード」ボタンが見つかりませんでした(最終話、または未対応のUI状態の可能性があります)');
+        logAvailableButtonsForDebug();
       }
     }, ADVANCE_RETRY_INTERVAL_MS);
+  }
+
+  // ---- loadedmetadataが発火しないシームレス連結再生対策:
+  // 再生位置の巻き戻り、または尺(duration)の大きな変化から「新しいエピソードが始まった」を検知する。
+  // 自分自身のボタンクリック直後の一瞬のブレを拾わないよう、抑制ウィンドウと連続確認(デバウンス)を設ける。
+  // 注意: 確認中(candidateTicks>0)は基準値を更新しない。ここで基準値を更新してしまうと
+  // 差分が1ティックしか観測されず、3回連続確認に絶対到達できなくなる(以前のバグ)。
+  function checkForEpisodeBoundary(video) {
+    if (!video || Number.isNaN(video.currentTime)) return;
+
+    if (Date.now() < suppressBoundaryUntil) {
+      // 抑制中は基準値も更新しない(抑制解除直後にその場のブレで誤反応しないようにするため)
+      return;
+    }
+
+    const t = video.currentTime;
+    const d = Number.isFinite(video.duration) ? video.duration : 0;
+
+    const jumpedBackward = t < lastKnownTime - BACKWARD_JUMP_THRESHOLD_SEC;
+    const durationChanged =
+      lastKnownDuration > 0 && d > 0 && Math.abs(d - lastKnownDuration) > DURATION_CHANGE_THRESHOLD_SEC;
+
+    if (jumpedBackward || durationChanged) {
+      boundaryCandidateTicks++;
+      if (boundaryCandidateTicks >= BOUNDARY_CONFIRM_TICKS) {
+        resetStateForNewEpisode();
+        boundaryCandidateTicks = 0;
+        lastKnownTime = t;
+        lastKnownDuration = d;
+      }
+      // 確定するまでは基準値を更新せず、同じ基準と比較し続けて確認を積み上げる
+    } else {
+      boundaryCandidateTicks = 0;
+      lastKnownTime = t;
+      lastKnownDuration = d;
+    }
   }
 
   function attachVideoListeners(video) {
     if (video.dataset.simpleRenzokuAttached) return;
     video.dataset.simpleRenzokuAttached = '1';
 
-    video.addEventListener('ended', handleVideoEnded);
+    video.addEventListener('ended', () => handleVideoEnded(video));
 
     video.addEventListener('loadedmetadata', () => {
       const marker = video.currentSrc || video.src;
       if (marker && marker !== currentVideoSrcMarker) {
         currentVideoSrcMarker = marker;
         resetStateForNewEpisode();
+        suppressBoundaryChecks();
+        lastKnownTime = video.currentTime || 0;
+        lastKnownDuration = Number.isFinite(video.duration) ? video.duration : 0;
       }
     });
   }
 
+  // ---- 「イントロをスキップ」ボタンの出現を新エピソード開始の合図として使う ----
+  // 1本の動画ファイルに話数ごとのチャプターが打ってあるだけの作品では、
+  // currentTime/durationが話数をまたいでも変化しないため上の巻き戻り/尺変化検知が機能しない。
+  // 「イントロをスキップ」は各話の頭にだけ出るはずなので、その出現の立ち上がり(非表示→表示)を
+  // 新エピソード開始の合図として使う。ボタン自体はクリックしない(OPは常にフル再生させたいため)。
+  function handleIntroSkipAppearance() {
+    const btn = document.querySelector(SKIP_INTRO_SELECTOR);
+    const visibleNow = Boolean(btn);
+
+    if (visibleNow && !introSkipButtonVisible) {
+      introSkipButtonVisible = true;
+      log('「イントロをスキップ」ボタンの出現を検知 → 新しいエピソードの開始とみなします');
+      resetStateForNewEpisode();
+      suppressBoundaryChecks();
+    } else if (!visibleNow) {
+      introSkipButtonVisible = false;
+    }
+  }
+
   function tick() {
     if (!enabled) return;
+
+    const video = document.querySelector('video');
+    if (video) {
+      attachVideoListeners(video);
+      checkForEpisodeBoundary(video);
+    }
+
+    handleIntroSkipAppearance();
     handleWatchCredits();
     handleHideRecommendations();
     handleStopAutoplay();
-
-    const video = document.querySelector('video');
-    if (video) attachVideoListeners(video);
   }
 
   // ---- DOM監視(MutationObserver + ポーリングの二重化で取りこぼしを防ぐ) ----
