@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>シンプル連続再生</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>シンプル連続再生</h1>
+    <p class="desc">OP/EDをスキップせずに次話へ自動遷移します</p>
+
+    <div class="row">
+      <span class="row-label">有効にする</span>
+      <label class="switch">
+        <input type="checkbox" id="enabledToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <ul class="notes">
+      <li>Amazon側の「自動再生」はONのままにしてください</li>
+      <li>次のエピソードが無い場合は動作しません</li>
+    </ul>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
