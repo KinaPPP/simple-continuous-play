@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "シンプル連続再生",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Amazonプライムビデオでオープニング/エンディングをスキップせずに次話を自動再生します(映画にも対応)。",
   "author": "KINA",
   "icons": {
@@ -20,6 +20,12 @@
   "permissions": [
     "storage"
   ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "simple-continuous-play@kinappp.github.io",
+      "strict_min_version": "109.0"
+    }
+  },
   "content_scripts": [
     {
       "matches": [

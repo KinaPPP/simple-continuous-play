@@ -23,10 +23,22 @@ Turning on Amazon Prime Video's built-in "Autoplay" setting advances episodes au
 
 ## インストール方法 / Installation
 
+### Chrome / Chrome系ブラウザ
+
 1. このリポジトリをダウンロードまたはクローン / Download or clone this repository
 2. `chrome://extensions` を開く / Open `chrome://extensions`
 3. 右上の「デベロッパーモード」をON / Enable "Developer mode" (top right)
 4. 「パッケージ化されていない拡張機能を読み込む」から `simple-continuous-play` フォルダを選択 / Click "Load unpacked" and select the `simple-continuous-play` folder
+
+### Firefox
+
+一時的な読み込み(ブラウザを再起動すると消えます) / Temporary installation (removed on browser restart):
+
+1. `about:debugging#/runtime/this-firefox` を開く / Open `about:debugging#/runtime/this-firefox`
+2. 「一時的なアドオンを読み込む」をクリック / Click "Load Temporary Add-on"
+3. `simple-continuous-play` フォルダ内の `manifest.json` を選択 / Select `manifest.json` inside the `simple-continuous-play` folder
+
+恒久的に使い続けたい場合は、Mozillaの署名(AMOへの提出、または自己配布用の署名)が別途必要です / For permanent installation, the extension needs to be signed by Mozilla (either by submitting to AMO or via self-distribution signing).
 
 ## 使い方 / Usage
 
@@ -37,6 +49,7 @@ Turning on Amazon Prime Video's built-in "Autoplay" setting advances episodes au
 
 - Amazon側のUI構造(要素ID)に依存しているため、Amazonのアップデートで動作しなくなる可能性があります / Relies on Amazon's current UI element IDs — may break after Amazon updates its player
 - 最終話など「次のエピソード」が存在しない場合は、通常通り再生が終了します / If there is no next episode (e.g. the season finale), playback simply ends as normal
+- FirefoxではON/OFFの状態(`storage.sync`)がFirefox Syncの設定に応じてローカル限定になる場合があります / In Firefox, the on/off toggle state (`storage.sync`) may stay local-only depending on your Firefox Sync settings
 
 ## ライセンス / License
 
