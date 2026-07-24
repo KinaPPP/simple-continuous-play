@@ -6,12 +6,11 @@
 
   const NEXT_EPISODE_BTN_ID = 'atvwebplayersdk-next-episode-button';
   const WATCH_CREDITS_BTN_ID = 'atvwebplayersdk-watch-credits-button';
-  // 「非表示」ボタンはaria-label="非表示"が付いていない(または一瞬しか付かない)ことがあるため、
-  // Amazonが用意している専用クラス名も合わせて拾う。
-  const HIDE_RECOMMENDATIONS_SELECTOR =
-    '.atvwebplayersdk-nextupcardhide-button, button[aria-label="非表示"]';
   const STOP_AUTOPLAY_SELECTOR = 'button[aria-label="Stop Autoplay"]';
   const SKIP_INTRO_SELECTOR = 'button[aria-label="イントロをスキップ"]';
+  // 「非表示」ボタンはUIパイプラインによってclass名が変わりaria-labelも付かないことがある
+  // (FreeVee系コンテンツなど)。テキスト内容(日本語/英語)で探すのが一番安定する。
+  const HIDE_RECOMMENDATIONS_TEXTS = ['非表示', 'hide'];
 
   const POLL_INTERVAL_MS = 400; // MutationObserverの取りこぼし対策の定期チェック間隔
   const ADVANCE_RETRY_INTERVAL_MS = 500; // ended後、次のエピソードボタンを探すリトライ間隔
@@ -93,12 +92,24 @@
     }
   }
 
+  // ---- テキスト内容からボタンを探す(class名やaria-labelがUIパイプラインごとに変わる対策) ----
+  function findButtonByText(texts) {
+    const targets = texts.map((t) => t.toLowerCase());
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = (btn.textContent || '').trim().toLowerCase();
+      if (text && targets.includes(text)) return btn;
+    }
+    return null;
+  }
+
   // ---- 「あなたにおすすめの商品」パネルをAmazon純正の「非表示」ボタンで畳む(映画・TV共通) ----
   // 独自CSSで透明化するとAmazon側の内部ロジックに干渉する恐れがあるため、
   // 必ずAmazonが用意しているボタンを実際にクリックする形にする。
+  // class名やaria-labelがUIパイプライン(通常/FreeVee等)によって変わるため、テキスト内容で探す。
   function handleHideRecommendations() {
     if (!enabled || recsHidden) return;
-    const btn = document.querySelector(HIDE_RECOMMENDATIONS_SELECTOR);
+    const btn = findButtonByText(HIDE_RECOMMENDATIONS_TEXTS);
     if (btn) {
       recsHidden = true;
       log('「非表示」ボタンを検知 → 自動クリックして「あなたにおすすめの商品」を畳みます');
