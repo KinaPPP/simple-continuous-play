@@ -6,7 +6,10 @@
 
   const NEXT_EPISODE_BTN_ID = 'atvwebplayersdk-next-episode-button';
   const WATCH_CREDITS_BTN_ID = 'atvwebplayersdk-watch-credits-button';
-  const HIDE_RECOMMENDATIONS_SELECTOR = 'button[aria-label="非表示"]';
+  // 「非表示」ボタンはaria-label="非表示"が付いていない(または一瞬しか付かない)ことがあるため、
+  // Amazonが用意している専用クラス名も合わせて拾う。
+  const HIDE_RECOMMENDATIONS_SELECTOR =
+    '.atvwebplayersdk-nextupcardhide-button, button[aria-label="非表示"]';
   const STOP_AUTOPLAY_SELECTOR = 'button[aria-label="Stop Autoplay"]';
   const SKIP_INTRO_SELECTOR = 'button[aria-label="イントロをスキップ"]';
 
