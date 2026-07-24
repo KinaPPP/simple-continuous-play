@@ -269,14 +269,55 @@
     }
   }
 
+  // ---- 一覧ページのホバー・プレビュー動画を誤検知しないためのガード ----
+  // サムネイルにマウスオーバーすると小さなプレビュー用<video>が生成され、
+  // そこにも(全く別機能の)「非表示」ボタン等が出ることがあるため、
+  // 「本編を再生している大きなプレイヤーかどうか」を判定する。
+  // 固定ピクセル数だとホバー時に拡大されるカードがギリギリ超えてしまうことがあるため、
+  // ウィンドウ全体に対する比率で判定する(一覧カードはどれだけ拡大されても画面の3〜4割には届かない)。
+  const MIN_MAIN_PLAYER_WIDTH_RATIO = 0.4;
+  const MIN_MAIN_PLAYER_HEIGHT_RATIO = 0.4;
+  const MIN_MAIN_PLAYER_DURATION_SEC = 60;
+
+  function isMainPlayerVideo(video) {
+    if (!video) return false;
+    const rect = video.getBoundingClientRect();
+    const bigEnough =
+      rect.width >= window.innerWidth * MIN_MAIN_PLAYER_WIDTH_RATIO &&
+      rect.height >= window.innerHeight * MIN_MAIN_PLAYER_HEIGHT_RATIO;
+    const longEnough =
+      !Number.isFinite(video.duration) || video.duration === 0 || video.duration >= MIN_MAIN_PLAYER_DURATION_SEC;
+    // durationがまだ0/未確定(読み込み直後)の場合はサイズだけで判定し、後続のtickで尺も確認する
+    return bigEnough && longEnough;
+  }
+
+  function findMainPlayerVideo() {
+    const videos = document.querySelectorAll('video');
+    let best = null;
+    let bestArea = 0;
+    videos.forEach((v) => {
+      const rect = v.getBoundingClientRect();
+      const area = rect.width * rect.height;
+      if (area > bestArea) {
+        bestArea = area;
+        best = v;
+      }
+    });
+    return best;
+  }
+
   function tick() {
     if (!enabled) return;
 
-    const video = document.querySelector('video');
-    if (video) {
+    const video = findMainPlayerVideo();
+    const mainPlayer = isMainPlayerVideo(video);
+
+    if (video && mainPlayer) {
       attachVideoListeners(video);
       checkForEpisodeBoundary(video);
     }
+
+    if (!mainPlayer) return; // 一覧ページのホバー・プレビュー等では以降の自動クリック系処理を一切行わない
 
     handleIntroSkipAppearance();
     handleWatchCredits();
