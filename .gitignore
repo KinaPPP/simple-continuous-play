@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.zip
+*.xpi
+.amo-upload-uuid
+.web-extension-id
+web-ext-artifacts/
+node_modules/
+sign-firefox.local.bat
