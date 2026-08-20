@@ -1,8 +1,8 @@
 # シンプル連続再生 / Simple Continuous Play
 
-Amazonプライムビデオで、オープニング(OP)やエンディング(ED)をスキップせずに次のエピソードへ自動的に連続再生するChrome拡張機能です。
+Amazonプライムビデオで、オープニング(OP)やエンディング(ED)をスキップせずに次のエピソードへ自動的に連続再生するChrome/Firefox拡張機能です。
 
-A Chrome extension that automatically advances to the next episode on Amazon Prime Video — without skipping the opening (OP) or ending credits (ED).
+A Chrome/Firefox extension that automatically advances to the next episode on Amazon Prime Video — without skipping the opening (OP) or ending credits (ED).
 
 ---
 
@@ -18,7 +18,9 @@ Turning on Amazon Prime Video's built-in "Autoplay" setting advances episodes au
 - 動画が本当に終わった(`ended`イベント)タイミングで「次のエピソード」ボタンを自動クリック / Automatically clicks "Next Episode" once the video's native `ended` event fires
 - 「イントロをスキップ」ボタンには一切触れないため、OPは常にフル再生される / Never touches the "Skip Intro" button, so the OP always plays in full
 - 「あなたにおすすめの商品」パネルをAmazon純正の「非表示」ボタンで自動的に畳む(映画・TV共通) / Automatically collapses the "Recommended for you" panel via Amazon's own "Hide" button (movies and TV series alike)
-- 映画の場合、次作への自動遷移を止める「Stop Autoplay」ボタンも自動クリック(映画では連続再生せず、EDだけを守る) / For movies, also clicks "Stop Autoplay" so the ED plays in full without auto-advancing to another film
+- 次作/次話への自動遷移を止める「Stop Autoplay」ボタンも自動クリック / Also clicks "Stop Autoplay" so the ED plays in full without an unwanted auto-advance
+- ボタンの検知はaria-labelだけでなく表示テキスト(大文字小文字を無視)でも行うため、Amazon側のUI変更に強い / Detects buttons by visible text (case-insensitive) as well as aria-label, for resilience against Amazon's UI changes
+- 一覧ページのサムネイル・ホバープレビューを本編再生と誤認しないようウィンドウサイズに対する比率で判定 / Distinguishes the real player from browse-page hover-preview thumbnails using viewport-relative sizing
 - ポップアップからON/OFF切り替え可能 / Toggle on/off from the popup
 
 ## インストール方法 / Installation
@@ -47,7 +49,7 @@ Turning on Amazon Prime Video's built-in "Autoplay" setting advances episodes au
 
 ## 注意事項 / Notes
 
-- Amazon側のUI構造(要素ID)に依存しているため、Amazonのアップデートで動作しなくなる可能性があります / Relies on Amazon's current UI element IDs — may break after Amazon updates its player
+- Amazon側のUI構造(要素ID・表示テキスト)に依存しているため、Amazonのアップデートで動作しなくなる可能性があります / Relies on Amazon's current UI element IDs and text labels — may break after Amazon updates its player
 - 最終話など「次のエピソード」が存在しない場合は、通常通り再生が終了します / If there is no next episode (e.g. the season finale), playback simply ends as normal
 - FirefoxではON/OFFの状態(`storage.sync`)がFirefox Syncの設定に応じてローカル限定になる場合があります / In Firefox, the on/off toggle state (`storage.sync`) may stay local-only depending on your Firefox Sync settings
 

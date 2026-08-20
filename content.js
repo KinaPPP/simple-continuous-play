@@ -6,28 +6,39 @@
 
   const NEXT_EPISODE_BTN_ID = 'atvwebplayersdk-next-episode-button';
   const WATCH_CREDITS_BTN_ID = 'atvwebplayersdk-watch-credits-button';
-  const STOP_AUTOPLAY_SELECTOR = 'button[aria-label="Stop Autoplay"]';
   const SKIP_INTRO_SELECTOR = 'button[aria-label="イントロをスキップ"]';
-  // 「非表示」ボタンはUIパイプラインによってclass名が変わりaria-labelも付かないことがある
-  // (FreeVee系コンテンツなど)。テキスト内容(日本語/英語)で探すのが一番安定する。
+  // 「非表示」「Stop Autoplay」はUIパイプラインによってclass名/aria-labelの有無や
+  // 大文字小文字が変わることがある(FreeVee系コンテンツ、Amazon側の仕様変更など)ため、
+  // ボタンの表示テキスト(大文字小文字を無視)で探すのが一番安定する。
   const HIDE_RECOMMENDATIONS_TEXTS = ['非表示', 'hide'];
+  const STOP_AUTOPLAY_TEXTS = ['stop autoplay'];
 
   const POLL_INTERVAL_MS = 400; // MutationObserverの取りこぼし対策の定期チェック間隔
   const ADVANCE_RETRY_INTERVAL_MS = 500; // ended後、次のエピソードボタンを探すリトライ間隔
   const ADVANCE_RETRY_MAX = 20; // 最大リトライ回数(合計10秒ほど)
+  const BACKWARD_JUMP_THRESHOLD_SEC = 20; // これ以上巻き戻ったら新しいエピソード開始とみなす
+  const DURATION_CHANGE_THRESHOLD_SEC = 5; // 尺がこれ以上変わったら新しいエピソードとみなす
+  const BOUNDARY_CONFIRM_TICKS = 3; // 巻き戻り/尺変化がこの回数連続で観測されたら確定(瞬間的なブレを無視)
+  const SELF_ACTION_SUPPRESS_MS = 4000; // 自分でボタンをクリックした直後はこの時間、境界判定を止める
+
+  // ---- 一覧ページのホバー・プレビュー動画を誤検知しないためのガード ----
+  // サムネイルにマウスオーバーすると小さなプレビュー用<video>が生成され、
+  // そこにも(全く別機能の)「非表示」ボタン等が出ることがあるため、
+  // 「本編を再生している大きなプレイヤーかどうか」を判定する。
+  // 固定ピクセル数だとホバー時に拡大されるカードがギリギリ超えてしまうことがあるため、
+  // ウィンドウ全体に対する比率で判定する(一覧カードはどれだけ拡大されても画面の3〜4割には届かない)。
+  const MIN_MAIN_PLAYER_WIDTH_RATIO = 0.4;
+  const MIN_MAIN_PLAYER_HEIGHT_RATIO = 0.4;
+  const MIN_MAIN_PLAYER_DURATION_SEC = 60;
 
   let enabled = true; // popupのトグルで上書きされる
   let creditsHandled = false; // このエピソードで「クレジットを観る」を処理済みか
   let advanceHandled = false; // このエピソードで次話遷移を処理済みか
   let recsHidden = false; // 「あなたにおすすめの商品」を非表示済みか(映画・TV共通)
-  let autoplayStopped = false; // 映画の「Stop Autoplay」を処理済みか
+  let autoplayStopped = false; // 映画等の「Stop Autoplay」を処理済みか
   let currentVideoSrcMarker = null;
   let lastKnownTime = 0;
   let lastKnownDuration = 0;
-  const BACKWARD_JUMP_THRESHOLD_SEC = 20; // これ以上巻き戻ったら新しいエピソード開始とみなす
-  const DURATION_CHANGE_THRESHOLD_SEC = 5; // 尺がこれ以上変わったら新しいエピソードとみなす
-  const BOUNDARY_CONFIRM_TICKS = 3; // 巻き戻り/尺変化がこの回数連続で観測されたら確定(瞬間的なブレを無視)
-  const SELF_ACTION_SUPPRESS_MS = 4000; // 自分でボタンをクリックした直後はこの時間、境界判定を止める
   let boundaryCandidateTicks = 0;
   let suppressBoundaryUntil = 0;
   let introSkipButtonVisible = false; // 「イントロをスキップ」が今表示中か(出現の立ち上がりだけを検知するため)
@@ -77,21 +88,6 @@
     log('新しいエピソードを検知、状態をリセットしました');
   }
 
-  // ---- 「クレジットを観る」ボタンを自動クリックし、EDの自動スキップをキャンセルする ----
-  // 注意: 以前は見つからなかった時の保険として次話カード全体を透明化していたが、
-  // Amazon側の自動遷移タイマーが「表示されていない要素」を検知して停止してしまう可能性があるため、
-  // ボタン自体のクリック以外は一切DOMに触らないようにする。
-  function handleWatchCredits() {
-    if (!enabled || creditsHandled) return;
-    const btn = document.getElementById(WATCH_CREDITS_BTN_ID);
-    if (btn) {
-      creditsHandled = true;
-      log('「クレジットを観る」ボタンを検知 → 自動クリックしてED自動スキップをキャンセルします');
-      btn.click();
-      suppressBoundaryChecks();
-    }
-  }
-
   // ---- テキスト内容からボタンを探す(class名やaria-labelがUIパイプラインごとに変わる対策) ----
   function findButtonByText(texts) {
     const targets = texts.map((t) => t.toLowerCase());
@@ -103,10 +99,21 @@
     return null;
   }
 
+  // ---- 「クレジットを観る」ボタンを自動クリックし、EDの自動スキップをキャンセルする ----
+  function handleWatchCredits() {
+    if (!enabled || creditsHandled) return;
+    const btn = document.getElementById(WATCH_CREDITS_BTN_ID);
+    if (btn) {
+      creditsHandled = true;
+      log('「クレジットを観る」ボタンを検知 → 自動クリックしてED自動スキップをキャンセルします');
+      btn.click();
+      suppressBoundaryChecks();
+    }
+  }
+
   // ---- 「あなたにおすすめの商品」パネルをAmazon純正の「非表示」ボタンで畳む(映画・TV共通) ----
   // 独自CSSで透明化するとAmazon側の内部ロジックに干渉する恐れがあるため、
   // 必ずAmazonが用意しているボタンを実際にクリックする形にする。
-  // class名やaria-labelがUIパイプライン(通常/FreeVee等)によって変わるため、テキスト内容で探す。
   function handleHideRecommendations() {
     if (!enabled || recsHidden) return;
     const btn = findButtonByText(HIDE_RECOMMENDATIONS_TEXTS);
@@ -118,16 +125,36 @@
     }
   }
 
-  // ---- 映画の場合、次作への自動遷移を止める「Stop Autoplay」ボタンを自動クリック ----
-  // 映画はTVシリーズと違い「続けて次を見たい」需要が薄いため、ED再生を守った上で次作へは進ませない。
+  // ---- 次作/次話への自動遷移を止める「Stop Autoplay」ボタンを自動クリック ----
+  // aria-labelの大文字小文字がAmazon側の更新で変わることがあるため、
+  // テキスト内容(小文字化して比較)で探す。
   function handleStopAutoplay() {
     if (!enabled || autoplayStopped) return;
-    const btn = document.querySelector(STOP_AUTOPLAY_SELECTOR);
+    const btn = findButtonByText(STOP_AUTOPLAY_TEXTS);
     if (btn) {
       autoplayStopped = true;
       log('「Stop Autoplay」ボタンを検知 → 自動クリックして次作への自動遷移をキャンセルします');
       btn.click();
       suppressBoundaryChecks();
+    }
+  }
+
+  // ---- 「イントロをスキップ」ボタンの出現を新エピソード開始の合図として使う ----
+  // 1本の動画ファイルに話数ごとのチャプターが打ってあるだけの作品では、
+  // currentTime/durationが話数をまたいでも変化しないため巻き戻り/尺変化検知が機能しない。
+  // 「イントロをスキップ」は各話の頭にだけ出るはずなので、その出現の立ち上がり(非表示→表示)を
+  // 新エピソード開始の合図として使う。ボタン自体はクリックしない(OPは常にフル再生させたいため)。
+  function handleIntroSkipAppearance() {
+    const btn = document.querySelector(SKIP_INTRO_SELECTOR);
+    const visibleNow = Boolean(btn);
+
+    if (visibleNow && !introSkipButtonVisible) {
+      introSkipButtonVisible = true;
+      log('「イントロをスキップ」ボタンの出現を検知 → 新しいエピソードの開始とみなします');
+      resetStateForNewEpisode();
+      suppressBoundaryChecks();
+    } else if (!visibleNow) {
+      introSkipButtonVisible = false;
     }
   }
 
@@ -249,35 +276,6 @@
       }
     });
   }
-
-  // ---- 「イントロをスキップ」ボタンの出現を新エピソード開始の合図として使う ----
-  // 1本の動画ファイルに話数ごとのチャプターが打ってあるだけの作品では、
-  // currentTime/durationが話数をまたいでも変化しないため上の巻き戻り/尺変化検知が機能しない。
-  // 「イントロをスキップ」は各話の頭にだけ出るはずなので、その出現の立ち上がり(非表示→表示)を
-  // 新エピソード開始の合図として使う。ボタン自体はクリックしない(OPは常にフル再生させたいため)。
-  function handleIntroSkipAppearance() {
-    const btn = document.querySelector(SKIP_INTRO_SELECTOR);
-    const visibleNow = Boolean(btn);
-
-    if (visibleNow && !introSkipButtonVisible) {
-      introSkipButtonVisible = true;
-      log('「イントロをスキップ」ボタンの出現を検知 → 新しいエピソードの開始とみなします');
-      resetStateForNewEpisode();
-      suppressBoundaryChecks();
-    } else if (!visibleNow) {
-      introSkipButtonVisible = false;
-    }
-  }
-
-  // ---- 一覧ページのホバー・プレビュー動画を誤検知しないためのガード ----
-  // サムネイルにマウスオーバーすると小さなプレビュー用<video>が生成され、
-  // そこにも(全く別機能の)「非表示」ボタン等が出ることがあるため、
-  // 「本編を再生している大きなプレイヤーかどうか」を判定する。
-  // 固定ピクセル数だとホバー時に拡大されるカードがギリギリ超えてしまうことがあるため、
-  // ウィンドウ全体に対する比率で判定する(一覧カードはどれだけ拡大されても画面の3〜4割には届かない)。
-  const MIN_MAIN_PLAYER_WIDTH_RATIO = 0.4;
-  const MIN_MAIN_PLAYER_HEIGHT_RATIO = 0.4;
-  const MIN_MAIN_PLAYER_DURATION_SEC = 60;
 
   function isMainPlayerVideo(video) {
     if (!video) return false;
