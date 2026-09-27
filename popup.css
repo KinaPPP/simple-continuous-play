@@ -2,12 +2,39 @@
   box-sizing: border-box;
 }
 
+/* Extension popup sizing must not depend on its initial tiny viewport. */
+html { width: 380px; min-width: 380px; overflow-x: hidden; }
 body {
   margin: 0;
-  width: 260px;
+  width: 380px;
+  min-width: 380px;
+  max-height: 580px;
+  overflow-y: auto;
+  overflow-x: hidden;
   font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
   background-color: #f5f5f5;
   color: #333333;
+}
+
+.diagnostic-actions { display: flex; gap: 6px; margin-top: 12px; }
+.diagnostic-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+#diagnosticText {
+  width: 100%;
+  height: 180px;
+  font-size: 11px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  resize: vertical;
 }
 
 .container {
@@ -94,3 +121,11 @@ input:checked + .slider::before {
   color: #9e9e9e;
   line-height: 1.6;
 }
+input:focus-visible + .slider { outline: 2px solid #185bb1; outline-offset: 3px; }
+small { font-size: 11px; font-weight: normal; color: #666; }
+.hint { font-size: 11px; line-height: 1.6; color: #555; }
+.hint:empty { display: none; }
+details { margin-top: 16px; border-top: 1px solid #ddd; padding-top: 12px; }
+summary { cursor: pointer; font-size: 12px; }
+
+.diagnostic-actions button:disabled { color: #777; cursor: default; opacity: .6; }

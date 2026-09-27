@@ -1,62 +1,73 @@
-# シンプル連続再生 / Simple Continuous Play
+# シンプル連続再生 v1.4.2
 
-Amazonプライムビデオで、オープニング(OP)やエンディング(ED)をスキップせずに次のエピソードへ自動的に連続再生するChrome/Firefox拡張機能です。
+Amazon Prime VideoのOP・EDを楽しみながら、同一シーズンの次の話へ進む拡張機能です。
+現在は公開前の確認用候補です。Chrome用とFirefox用は共通ソースから生成します。
 
-A Chrome/Firefox extension that automatically advances to the next episode on Amazon Prime Video — without skipping the opening (OP) or ending credits (ED).
+## 使い方
 
----
+1. 拡張機能を読み込み、Prime Videoページを再読み込みします。
+2. Prime Video側の「自動再生」をONにします。
+3. 拡張機能の「連続再生を有効にする」をONにします。
 
-## 背景 / Background
+通常の設定はON／OFFだけです。表示遅延と終了直前の次話カード保持は標準動作です。
+更新時には既存のON／OFFを維持します。1.3.xのテスト設定は読み込みません。
+ON／OFF変更後はページを再読み込みすると完全に反映されます。読み込み済みの再生情報は、その場では元に戻せません。
 
-Amazonプライムビデオの「自動再生」機能をONにすると、次のエピソードへ自動的に進んでくれる代わりに、OP・EDが強制的にスキップされてしまいます。この拡張機能は、Amazon純正の自動再生設定は**ONのまま**にしつつ、EDの自動スキップだけをキャンセルし、映像が本当に終わったタイミングで次話へ進めます。
+「困ったとき・診断ログ」を開くと、診断情報の取得・コピーができます。
+情報はブラウザー内で扱い、自動送信しません。作品名・URL・認証情報は診断ログに含めません。
 
-Turning on Amazon Prime Video's built-in "Autoplay" setting advances episodes automatically, but it also force-skips the OP and ED. This extension keeps Amazon's autoplay setting **ON**, cancels the automatic ED-skip, and instead advances to the next episode only once playback has genuinely finished.
+## 動作と限界
 
-## 主な機能 / Features
+- OP／EDのスキップボタンを自動で押しません。
+- 早期のNext Up表示を遅らせ、終了間際の確認済み次話カードを保持します。
+- 次話の話数・画像を一覧と照合します。別作品を次話とみなして再生しません。
+- プレイヤー内で公式の次話移行が成功すると全画面を維持できます。
+- 終了通知を確認できた場合、必要に応じて一覧の検証済み次話URLで再生を補助します。この経路で全画面復帰は保証しません。
+- おすすめ表示への既存の停止・非表示処理を維持します。表示遅延の影響でパネル自体が出ない場合もあります。
+- 公式の移行時刻はAmazon側が決めるため、最後の全フレームの再生は保証しません。
+- 一覧へ戻っても終了通知が来ない場合は、誤った自動再生を避けるため次話を強制再生しません。
 
-- 「クレジットを観る」ボタンを自動クリックし、EDの自動スキップをキャンセル / Automatically clicks "Watch Credits" to cancel the automatic ED skip
-- 動画が本当に終わった(`ended`イベント)タイミングで「次のエピソード」ボタンを自動クリック / Automatically clicks "Next Episode" once the video's native `ended` event fires
-- 「イントロをスキップ」ボタンには一切触れないため、OPは常にフル再生される / Never touches the "Skip Intro" button, so the OP always plays in full
-- 「あなたにおすすめの商品」パネルをAmazon純正の「非表示」ボタンで自動的に畳む(映画・TV共通) / Automatically collapses the "Recommended for you" panel via Amazon's own "Hide" button (movies and TV series alike)
-- 次作/次話への自動遷移を止める「Stop Autoplay」ボタンも自動クリック / Also clicks "Stop Autoplay" so the ED plays in full without an unwanted auto-advance
-- ボタンの検知はaria-labelだけでなく表示テキスト(大文字小文字を無視)でも行うため、Amazon側のUI変更に強い / Detects buttons by visible text (case-insensitive) as well as aria-label, for resilience against Amazon's UI changes
-- 一覧ページのサムネイル・ホバープレビューを本編再生と誤認しないようウィンドウサイズに対する比率で判定 / Distinguishes the real player from browse-page hover-preview thumbnails using viewport-relative sizing
-- ポップアップからON/OFF切り替え可能 / Toggle on/off from the popup
+Firefoxの瑠璃の宝石12→13話で、終了カードを保持できても移行に失敗する例が残っています。
+同条件で成功した例もあり、Firefox全般に問題がないことを保証する段階ではありません。
+今回の整理ではこの未解決事象に新しい推測ベースの再生処理を追加していません。
 
-## インストール方法 / Installation
+## ビルド・確認
 
-### Chrome / Chrome系ブラウザ
+Python 3で `python build.py` を実行します。
 
-1. このリポジトリをダウンロードまたはクローン / Download or clone this repository
-2. `chrome://extensions` を開く / Open `chrome://extensions`
-3. 右上の「デベロッパーモード」をON / Enable "Developer mode" (top right)
-4. 「パッケージ化されていない拡張機能を読み込む」から `simple-continuous-play` フォルダを選択 / Click "Load unpacked" and select the `simple-continuous-play` folder
+- `dist/chrome/`：Chromeの「パッケージ化されていない拡張機能を読み込む」で指定。
+- `dist/firefox/`：Firefoxの一時的なアドオンとしてmanifest.jsonを指定。
+- `dist/*-candidate.zip`：それぞれのインストール／提出用ファイル構成。ZIP直下にmanifest.jsonがあります。
 
-### Firefox
+Firefox用ZIPは未署名です。Firefox 128以降用で、従来のアドオンIDを維持しています。
+署名申請・一般公開はまだ行っていません。署名時はソースのルートではなく生成済み `dist/firefox` を対象にしてください。
+既存の署名バッチは過去のものとして残していますが、出力先を指定せずにソース直下で実行しないでください。
 
-一時的な読み込み(ブラウザを再起動すると消えます) / Temporary installation (removed on browser restart):
+Node.jsで `node --test tests/*.test.cjs` を実行できます。
+DOMと動画の模擬テストであり、実際のPrime Video再生や署名審査の代わりにはなりません。
+実機では連続数話・最終話／映画・ON/OFF・一覧経由の再生を確認してください。
 
-1. `about:debugging#/runtime/this-firefox` を開く / Open `about:debugging#/runtime/this-firefox`
-2. 「一時的なアドオンを読み込む」をクリック / Click "Load Temporary Add-on"
-3. `simple-continuous-play` フォルダ内の `manifest.json` を選択 / Select `manifest.json` inside the `simple-continuous-play` folder
+## 1.3.27からの整理
 
-恒久的に使い続けたい場合は、Mozillaの署名(AMOへの提出、または自己配布用の署名)が別途必要です / For permanent installation, the extension needs to be signed by Mozilla (either by submitting to AMO or via self-distribution signing).
+- 通常画面をON／OFFと折りたたみ診断に縮小。
+- 一時停止、操作バー表示、Fキー、終了1秒前の操作テストを削除。
+- 旧実験設定にかかわらず、成功確認済みの表示遅延を標準に統一。
+- 表示遅延、話数照合、全画面移行の引き継ぎ、映画の保護は維持。
+- Chrome／Firefoxを共通ソースから必要ファイルだけで生成。
 
-## 使い方 / Usage
+開発経緯はHISTORY-1.3.md、今回のFirefox比較はFIREFOX-12-13.mdを参照してください。
 
-- Amazon側の「自動再生」設定はONのままにしてください(OFFだと次話への自動遷移自体が発生しません) / Keep Amazon's own "Autoplay" setting ON — turning it off prevents automatic progression entirely
-- 拡張機能アイコンのポップアップから有効/無効を切り替えられます / Use the extension icon's popup to toggle the extension on/off
 
-## 注意事項 / Notes
+## 1.4.1
 
-- Amazon側のUI構造(要素ID・表示テキスト)に依存しているため、Amazonのアップデートで動作しなくなる可能性があります / Relies on Amazon's current UI element IDs and text labels — may break after Amazon updates its player
-- 最終話など「次のエピソード」が存在しない場合は、通常通り再生が終了します / If there is no next episode (e.g. the season finale), playback simply ends as normal
-- FirefoxではON/OFFの状態(`storage.sync`)がFirefox Syncの設定に応じてローカル限定になる場合があります / In Firefox, the on/off toggle state (`storage.sync`) may stay local-only depending on your Firefox Sync settings
+診断欄の上に「診断ログを取得」「ログをコピー」「JSONで出力」を横並びで配置しました。
+コピーと出力はログ取得後に使用できます。JSONには表示中のログだけを保存し、作品名やURLは追加しません。
+報告時には作品名・話数・起きたことを本文に記入してください。ログ内の日時は従来どおり残ります。
+ポップアップは幅380pxとし、ログの長い行を折り返します。再生処理の変更はありません。
 
-## ライセンス / License
 
-MIT License. See [LICENSE](./LICENSE).
+## 1.4.2
 
-## 作者 / Author
-
-KINA ([@KinaPPP](https://github.com/KinaPPP))
+Chromeでポップアップがスクロールバー程度の幅に縮む問題への修正。
+初期ビューポートに依存するmax-width:100vwとbodyの幅100%を外し、html/bodyの幅と最小幅を380pxに固定しました。
+診断ボタンの横並び、JSON出力、ログの折り返しを維持しています。再生処理の変更はありません。

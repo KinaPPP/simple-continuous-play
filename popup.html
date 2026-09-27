@@ -1,28 +1,36 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>シンプル連続再生</title>
-<link rel="stylesheet" href="popup.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>シンプル連続再生</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>シンプル連続再生</h1>
-    <p class="desc">OP/EDをスキップせずに次話へ自動遷移します</p>
-
+  <main class="container">
+    <h1>シンプル連続再生 <small id="version"></small></h1>
+    <p class="desc">OP・EDを楽しみながら、次のエピソードへ。</p>
     <div class="row">
-      <span class="row-label">有効にする</span>
+      <span id="enabledLabel" class="row-label">連続再生を有効にする</span>
       <label class="switch">
-        <input type="checkbox" id="enabledToggle" checked>
-        <span class="slider"></span>
+        <input type="checkbox" id="enabledToggle" aria-labelledby="enabledLabel">
+        <span class="slider" aria-hidden="true"></span>
       </label>
     </div>
-
-    <ul class="notes">
-      <li>Amazon側の「自動再生」はONのままにしてください</li>
-      <li>次のエピソードが無い場合は動作しません</li>
-    </ul>
-  </div>
+    <p class="hint">Prime Video側の「自動再生」もONにしてください。</p>
+    <p id="settingStatus" class="hint" role="status"></p>
+    <details>
+      <summary>困ったとき・診断ログ</summary>
+      <p class="hint">更新後は拡張機能とPrime Videoページを再読み込みしてください。</p>
+      <div class="diagnostic-actions">
+        <button id="diagnose" type="button">診断ログを取得</button>
+        <button id="copyDiagnostic" type="button" disabled>ログをコピー</button>
+        <button id="exportDiagnostic" type="button" disabled>JSONで出力</button>
+      </div>
+      <p id="diagnosticStatus" class="hint" role="status"></p>
+      <textarea id="diagnosticText" aria-label="診断ログ" readonly hidden></textarea>
+    </details>
+  </main>
   <script src="popup.js"></script>
 </body>
 </html>
