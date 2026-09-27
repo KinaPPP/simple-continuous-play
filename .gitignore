@@ -4,6 +4,7 @@ Thumbs.db
 *.xpi
 .amo-upload-uuid
 .web-extension-id
+dist/
 web-ext-artifacts/
 node_modules/
 sign-firefox.local.bat
