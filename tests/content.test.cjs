@@ -42,7 +42,7 @@ class Element {
   dispatchEvent(event) { event.target ||= this; for (const fn of [...(this.listeners[event.type] || [])]) fn(event); }
   click() { this.clicks++; this.onClick?.(); }
 }
-function fixture({ enabled = true, size = 1000, duration = 1400, series = true, earlyNext = false, memory = new Map(), startTime = 10000, suppressNextUpExperiment = false, nextUpExperimentMode = 'remove', networkSnapshotData = null } = {}) {
+function fixture({ exitFullscreenAtEnd = false, debugMode = false, enabled = true, size = 1000, duration = 1400, series = true, earlyNext = false, memory = new Map(), startTime = 10000, suppressNextUpExperiment = false, nextUpExperimentMode = 'remove', networkSnapshotData = null } = {}) {
   const body = new Element('body');
   const root = body.add(new Element('div', { id: 'dv-web-player' }));
   const makeVideo = () => {
@@ -83,7 +83,7 @@ function fixture({ enabled = true, size = 1000, duration = 1400, series = true, 
     MutationObserver: class { constructor(fn) { this.fn = fn; } observe() {} },
     KeyboardEvent: class { constructor(type, options) { this.type = type; Object.assign(this, options); this.isTrusted = false; } }, MouseEvent: class { constructor(type) { this.type = type; } },
     chrome: { runtime: { onMessage: { addListener: fn => { messageHandler = fn; } } }, storage: {
-      sync: { get: (_defaults, cb) => cb({ enabled, earlyNext, suppressNextUpExperiment, nextUpExperimentMode }) },
+      sync: { get: (_defaults, cb) => cb({ exitFullscreenAtEnd, debugMode, enabled, earlyNext, suppressNextUpExperiment, nextUpExperimentMode }) },
       onChanged: { addListener: fn => { change = fn; } },
     } },
   };
@@ -91,6 +91,7 @@ function fixture({ enabled = true, size = 1000, duration = 1400, series = true, 
   context.top = context;
   vm.runInNewContext(source, context);
   return {
+    debugSetting: value => change({ debugMode: { newValue: value } }, 'sync'),
     document, root, body, video, logs, location, makeVideo, panel, rows, addEpisode, navigations, earlySetting: value => change({ earlyNext: { newValue: value } }, 'sync'),
     fullscreenTest: () => { let result; messageHandler({ type: 'scp-fullscreen-test' }, {}, data => { result = data; }); return result; }, controlsTest: () => { let result; messageHandler({ type: 'scp-controls-test' }, {}, data => { result = data; }); return result; }, pauseTest: () => { let result; messageHandler({ type: 'scp-pause-test' }, {}, data => { result = data; }); return result; }, diagnostics: () => { let result; messageHandler({ type: 'scp-diagnostics' }, {}, data => { result = data; }); return result; },
     button: (text, attrs = {}, parent = root, tag = 'button') => parent.add(new Element(tag, attrs, text)),
@@ -103,6 +104,71 @@ function fixture({ enabled = true, size = 1000, duration = 1400, series = true, 
     },
   };
 }
+
+test('debug observes real fullscreen and ended while playback is OFF, without acting or leaking text', () => {
+  const f = fixture({ enabled: false, debugMode: true });
+  const stop = f.button('自動再生を終了する');
+  f.document.fullscreenElement = f.body;
+  f.body.dispatchEvent({ type: 'fullscreenchange' });
+  f.end(); f.root.style.display = 'none'; f.poll(1000);
+  const d = f.diagnostics().debug;
+  assert.ok(d.events.some(e => e.event === 'ended' && e.fullscreen));
+  assert.equal(d.events.at(-1).player.display, 'none');
+  assert.equal(stop.clicks, 0); assert.equal(f.navigations.length, 0);
+  assert.doesNotMatch(JSON.stringify(d), /https:|blob:|episode one|自動再生を終了する/);
+  for (let i = 0; i < 260; i++) f.poll(1000);
+  assert.equal(f.diagnostics().debug.events.length, 240);
+  f.debugSetting(false); assert.equal(f.diagnostics().debug.events.length, 0);
+});
+
+test('debug is opt-in and alternate stop wording is handled without a next target', () => {
+  const f = fixture({ series: false }); const stop = f.button('自動再生を終了する');
+  f.video.currentTime = 1390; f.poll();
+  assert.equal(stop.clicks, 1); assert.equal(f.diagnostics().debug.events.length, 0);
+});
+
+test('optional fullscreen cleanup waits for final episode end and hidden player/list for two seconds', async () => {
+  const f = fixture({ exitFullscreenAtEnd: true });
+  f.root.ownText = 'S1 E3 final'; f.poll();
+  f.document.fullscreenElement = f.root;
+  let exits = 0;
+  f.document.exitFullscreen = () => { exits++; f.document.fullscreenElement = null; return Promise.resolve(); };
+  f.end(); assert.equal(exits, 0);
+  f.root.style.display = 'none'; f.root.rect.width = f.root.rect.height = 0;
+  f.video.rect.width = f.video.rect.height = 0;
+  f.poll(); f.poll(1800); assert.equal(exits, 0);
+  f.poll(400); await Promise.resolve(); assert.equal(exits, 1);
+  f.poll(3000); assert.equal(exits, 1);
+});
+
+for (const mode of ['unchecked', 'master-off', 'next-episode', 'no-ended', 'player-visible', 'fullscreen-changed', 'list-hidden', 'route-changed']) {
+  test('fullscreen cleanup does not run: ' + mode, () => {
+    const f = fixture({ exitFullscreenAtEnd: mode !== 'unchecked', enabled: mode !== 'master-off' });
+    if (mode !== 'next-episode') f.root.ownText = 'S1 E3 final';
+    f.poll(); f.document.fullscreenElement = f.root;
+    let exits = 0; f.document.exitFullscreen = () => { exits++; };
+    if (mode !== 'no-ended') f.end();
+    if (mode !== 'player-visible') {
+      f.root.style.display = 'none'; f.root.rect.width = f.root.rect.height = 0;
+      f.video.rect.width = f.video.rect.height = 0;
+    }
+    if (mode === 'fullscreen-changed') f.document.fullscreenElement = f.body;
+    if (mode === 'list-hidden') f.panel.style.display = 'none';
+    if (mode === 'route-changed') f.location.href += '/other';
+    f.poll(); f.poll(3000); assert.equal(exits, 0);
+  });
+}
+
+test('fullscreen exit rejection is logged once without retrying', async () => {
+  const f = fixture({ exitFullscreenAtEnd: true });
+  f.root.ownText = 'S1 E3 final'; f.poll(); f.document.fullscreenElement = f.root;
+  let exits = 0; f.document.exitFullscreen = () => { exits++; return Promise.reject(new Error('blocked')); };
+  f.end(); f.root.style.display = 'none'; f.root.rect.width = f.root.rect.height = 0;
+  f.video.rect.width = f.video.rect.height = 0;
+  f.poll(); f.poll(3000); await new Promise(resolve => setImmediate(resolve)); f.poll(3000);
+  assert.equal(exits, 1);
+  assert.ok(f.diagnostics().lifecycle.some(e => e.event === 'fullscreen-exit-rejected'));
+});
 
 test('OP/ED and even the final fraction of a second are never skipped', () => {
   const f = fixture(); const next = f.button('次のエピソード'); const intro = f.button('イントロをスキップ');
@@ -334,7 +400,7 @@ test('OFF never cancels even when a visible dedicated Hide button exists', () =>
 });
 test('diagnostics identify injected script and detection without URLs or episode titles', () => {
   const f = fixture(); nextCard(f); f.poll(); const d = f.diagnostics();
-  assert.equal(d.scriptVersion, '1.4.2'); assert.equal(d.enabled, true); assert.equal(d.topFrame, true);
+  assert.equal(d.scriptVersion, '1.4.4'); assert.equal(d.enabled, true); assert.equal(d.topFrame, true);
   assert.equal(d.videos[0].selected, true); assert.equal(d.session.seriesEpisode, 1);
   const json = JSON.stringify(d);
   assert.ok(!json.includes('https://')); assert.ok(!json.includes('blob:')); assert.ok(!json.includes('episode one'));

@@ -1,4 +1,12 @@
 const toggle = document.getElementById('enabledToggle');
+const exitFullscreenToggle = document.getElementById('exitFullscreenToggle');
+chrome.storage.sync.get({ exitFullscreenAtEnd: false }, data => {
+  exitFullscreenToggle.checked = data.exitFullscreenAtEnd === true;
+});
+exitFullscreenToggle.addEventListener('change', () => {
+  chrome.storage.sync.set({ exitFullscreenAtEnd: exitFullscreenToggle.checked });
+  document.getElementById('settingStatus').textContent = '全画面解除の設定を変更しました。次の動画終了から反映されます。';
+});
 document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
 chrome.storage.sync.get({ enabled: true }, data => { toggle.checked = data.enabled !== false; });
 
@@ -76,4 +84,13 @@ exportDiagnostic.addEventListener('click', () => {
     // Allow both browsers to start reading before releasing the download URL.
     if (url) setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
+});
+
+const debugToggle = document.getElementById('debugToggle');
+chrome.storage.sync.get({ debugMode: false }, data => { debugToggle.checked = data.debugMode === true; });
+debugToggle.addEventListener('change', () => {
+  chrome.storage.sync.set({ debugMode: debugToggle.checked });
+  document.getElementById('settingStatus').textContent = debugToggle.checked
+    ? 'デバッグ記録を開始します。連続再生OFFでも記録します。'
+    : 'デバッグ記録を停止し、ページ内のデバッグ記録を消去します。';
 });

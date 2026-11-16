@@ -96,9 +96,9 @@ test('clipboard denial leaves a selected report for manual copying', async () =>
 
 
 
-test('popup has one setting and diagnostics initially collapsed', () => {
+test('popup has playback and opt-in debug settings with diagnostics collapsed', () => {
   const html=fs.readFileSync(path.join(__dirname,'..','popup.html'),'utf8');
-  assert.equal((html.match(/type="checkbox"/g)||[]).length,1);
+  assert.equal((html.match(/type="checkbox"/g)||[]).length,3);
   assert.match(html,/<details>/); assert.doesNotMatch(html,/<details[^>]*open/);
   assert.doesNotMatch(html,/pauseTest|controlsTest|fullscreenTest|earlyNextToggle|nextUpExperimentMode/);
   const f=popup(); f.get('enabledToggle').handlers.change();

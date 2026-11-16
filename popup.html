@@ -18,10 +18,14 @@
       </label>
     </div>
     <p class="hint">Prime Video側の「自動再生」もONにしてください。</p>
+    <label class="hint"><input type="checkbox" id="exitFullscreenToggle"> 次のエピソードがない場合、再生終了後に全画面を解除する</label>
+    <p class="hint">連続再生ON時のみ。一覧へ戻った約2秒後に解除します。</p>
     <p id="settingStatus" class="hint" role="status"></p>
     <details>
       <summary>困ったとき・診断ログ</summary>
       <p class="hint">更新後は拡張機能とPrime Videoページを再読み込みしてください。</p>
+      <label class="hint"><input type="checkbox" id="debugToggle"> デバッグモード（終了・全画面・クリックを記録）</label>
+      <p class="hint">連続再生OFFでも記録します。問題が起きたらすぐログを取得してください。再読み込みで記録は消えます。</p>
       <div class="diagnostic-actions">
         <button id="diagnose" type="button">診断ログを取得</button>
         <button id="copyDiagnostic" type="button" disabled>ログをコピー</button>

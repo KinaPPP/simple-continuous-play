@@ -1,7 +1,7 @@
 // Simple Continuous Play — keep OP/ED intact; advance only after native media end.
 (() => {
   'use strict';
-  const VERSION = '1.4.2';
+  const VERSION = '1.4.4';
   // #dv-web-player observed on amazon.co.jp, 2026-09-26. Others: compatibility only.
   const PLAYER = '#dv-web-player, .webPlayerSDKContainer, [aria-label="Web Player"]';
   const CONTROL = 'button, [role="button"], a[href]';
@@ -17,7 +17,7 @@
     credits: ['クレジットを観る', 'クレジットを見る', 'エンドクレジットを観る',
       'watch credits', 'abspann ansehen', 'voir le générique', 'ver créditos',
       'guarda i titoli di coda', 'assistir aos créditos', '크레딧 보기', '观看片尾', '觀看片尾'],
-    stop: ['stop autoplay', '自動再生を停止', '自動再生を停止する', '自動再生をキャンセル',
+    stop: ['stop autoplay', '自動再生を停止', '自動再生を停止する', '自動再生をキャンセル', '自動再生を終了する', '自動再生を終了',
       'automatische wiedergabe stoppen', 'arrêter la lecture automatique',
       'detener reproducción automática', 'interrompi riproduzione automatica',
       'parar reprodução automática', '자동 재생 중지', '停止自动播放', '停止自動播放'],
@@ -32,6 +32,45 @@
   const normalize = value => (value || '').normalize('NFKC').replace(/[\u200B-\u200F\uFEFF]/g, '')
     .replace(/\s+/g, ' ').trim().toLowerCase();
   let enabled = false;
+  let exitFullscreenAtEnd = false, fullscreenExitPending = null;
+  function armFullscreenExit(session) {
+    const fs = document.fullscreenElement;
+    const rows = episodeRows(), current = session.currentEpisode;
+    if (!enabled || !exitFullscreenAtEnd || !fs?.matches?.(PLAYER) ||
+        !fs.contains(session.video) || session.target || session.officialCountdown ||
+        session.cardConflict || session.nativeConflict || !current ||
+        !rows.some(row => row.number === current.number && row.url === current.url) ||
+        rows.some(row => row.number > current.number)) return;
+    fullscreenExitPending = { session, fs, at: Date.now(), hiddenSince: null, url: location.href };
+    trace('fullscreen-exit-armed', session);
+  }
+  function checkFullscreenExit() {
+    const p = fullscreenExitPending;
+    if (!p) return;
+    if (!enabled || !exitFullscreenAtEnd || Date.now() - p.at > 15000 ||
+        document.fullscreenElement !== p.fs || location.href !== p.url || active !== p.session ||
+        !p.session.completed || p.session.target || p.session.navigated || p.session.officialCountdown) {
+      fullscreenExitPending = null; return;
+    }
+    const list = document.getElementById('tab-content-episodes');
+    const rect = p.fs.getBoundingClientRect();
+    const hidden = getComputedStyle(p.fs).display === 'none' && rect.width === 0 && rect.height === 0;
+    if (!hidden || [...document.querySelectorAll(PLAYER)].some(visible) || !list || !visible(list)) {
+      p.hiddenSince = null; return;
+    }
+    if (p.hiddenSince === null) p.hiddenSince = Date.now();
+    if (Date.now() - p.hiddenSince < 2000) return;
+    fullscreenExitPending = null;
+    if (typeof document.exitFullscreen !== 'function') return;
+    trace('fullscreen-exit-request', p.session);
+    debugSnapshot('fullscreen-exit-request');
+    try {
+      Promise.resolve(document.exitFullscreen()).then(() => {
+        trace('fullscreen-exit-result', p.session, { exited: !document.fullscreenElement });
+        debugSnapshot('fullscreen-exit-result');
+      }, () => { trace('fullscreen-exit-rejected', p.session); debugSnapshot('fullscreen-exit-rejected'); });
+    } catch { trace('fullscreen-exit-rejected', p.session); }
+  }
   const earlyNext = false; // Retained in diagnostic reports for comparison with 1.3.x.
   const nextUpExperiment = true, nextUpMode = 'delayFallback';
   const finalCardMode = () => ['nearEnd2','nearEnd5','compare','delayFallback'].includes(nextUpMode);
@@ -94,6 +133,58 @@
       session.diagnosticIdentity = key;
     }
   }
+
+
+  // Opt-in observation also works with the master playback switch OFF.
+  // Never serialize text, IDs, classes, URLs, key values or input contents.
+  let debugMode = false, debugLastSample = 0;
+  const debugEvents = [];
+  function debugElement(e) {
+    if (!e || !e.getBoundingClientRect) return null;
+    const r = e.getBoundingClientRect(), css = getComputedStyle(e);
+    return { ...elementInfo(e), rect: { x: Math.round(r.left), y: Math.round(r.top),
+      width: Math.round(r.width), height: Math.round(r.height) },
+      display: css.display, visibility: css.visibility, pointerEvents: css.pointerEvents,
+      opacity: css.opacity };
+  }
+  function debugSnapshot(event, extra = {}) {
+    if (!debugMode) return;
+    const finite = n => Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
+    const root = document.getElementById('dv-web-player');
+    const list = document.getElementById('tab-content-episodes');
+    const fsButton = document.getElementById('atvwebplayersdk-fullscreen-toggle-button');
+    const label = normalize(fsButton?.getAttribute('aria-label'));
+    debugEvents.push({ at: Date.now(), event, enabled,
+      fullscreen: debugElement(document.fullscreenElement),
+      fullscreenControl: !fsButton ? 'absent' : /全画面を終了|exit full.?screen/.test(label) ? 'exit' : /全画面|full.?screen/.test(label) ? 'enter' : 'other',
+      player: debugElement(root), episodeList: debugElement(list),
+      videos: [...document.querySelectorAll('video')].slice(0, 4).map(v => ({
+        element: debugElement(v), time: finite(v.currentTime), duration: finite(v.duration),
+        paused: v.paused, ended: v.ended, seeking: v.seeking })), ...extra });
+    if (debugEvents.length > 240) debugEvents.splice(0, debugEvents.length - 240);
+  }
+  function setDebugMode(value) {
+    debugMode = value === true;
+    if (!debugMode) debugEvents.length = 0;
+    debugSnapshot('debug-enabled');
+  }
+  function debugPoll() {
+    if (!debugMode || Date.now() - debugLastSample < 1000) return;
+    debugLastSample = Date.now();
+    debugSnapshot('sample');
+  }
+  for (const event of ['fullscreenchange', 'fullscreenerror', 'ended', 'pause', 'playing', 'emptied']) {
+    document.addEventListener(event, e => {
+      if (event.startsWith('fullscreen') || e.target?.matches?.('video')) debugSnapshot(event);
+    }, true);
+  }
+  document.addEventListener('click', e => {
+    if (!debugMode || !e.isTrusted) return;
+    // Scope hit-testing to Prime Video UI; never collect text or form values.
+    if (!e.target?.closest?.(PLAYER + ', #tab-content-episodes, #btf-sticky-nav')) return;
+    debugSnapshot('click', { target: debugElement(e.target),
+      hits: (document.elementsFromPoint?.(e.clientX, e.clientY) || []).slice(0, 4).map(debugElement) });
+  }, true);
 
   const history = [];
   const TRANSITION_KEY = 'simple-continuous-play-transition';
@@ -534,6 +625,7 @@
         video.duration < 60 || (video.currentSrc || video.src) !== session.src ||
         location.href !== session.url) return;
     session.completed = true;
+    armFullscreenExit(session);
     session.deadline = Date.now() + 30000;
     if (session.officialCountdown) saveTransition(session, 'official-countdown-wait');
     else if (['compare','delayFallback'].includes(nextUpMode)) saveTransition(session, 'comparison-media-ended');
@@ -624,7 +716,7 @@
   }
   function tick() {
     observeFullscreen('poll');
-    try { playbackTick(); } finally { observeIdentity(active); }
+    try { playbackTick(); } finally { observeIdentity(active); checkFullscreenExit(); }
   }
   function playbackTick() {
     if (!enabled) return;
@@ -695,7 +787,7 @@
   function setEnabled(value) {
     enabled = value !== false;
     log('有効状態:', enabled ? 'ON' : 'OFF');
-    if (!enabled) { detach('disabled'); }
+    if (!enabled) { fullscreenExitPending = null; detach('disabled'); }
     else tick();
   }
   let pending = false;
@@ -707,6 +799,7 @@
         height: Math.round(rect.height), inPlayer: !!element.closest(PLAYER) };
     };
     return {
+      debug: { enabled: debugMode, capacity: 240, events: [...debugEvents] },
       scriptVersion: VERSION, enabled, earlyNext, nextUpExperiment, nextUpMode, fullscreen: !!document.fullscreenElement, earlyPending: false, topFrame: window === window.top,
       viewport: { width: innerWidth, height: innerHeight },
       players: document.querySelectorAll(PLAYER).length,
@@ -725,6 +818,7 @@
         cardConflict: active.cardConflict, nativeAttempted: active.nativeAttemptAt !== null,
         suspended: active.suspendedSince !== null, samples: [...active.samples] } : null,
       lastSession, previousTransition,
+      exitFullscreenAtEnd, fullscreenExitPending: !!fullscreenExitPending,
       fullscreenTarget: elementInfo(document.fullscreenElement), lifecycle: [...lifecycle],
       history: [...history],
     };
@@ -746,15 +840,22 @@
   });
   const storage = globalThis.chrome?.storage;
   storage?.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.exitFullscreenAtEnd) {
+      exitFullscreenAtEnd = changes.exitFullscreenAtEnd.newValue === true;
+      if (!exitFullscreenAtEnd) fullscreenExitPending = null;
+    }
+    if (area === 'sync' && changes.debugMode) setDebugMode(changes.debugMode.newValue);
     if (area === 'sync' && changes.enabled) setEnabled(changes.enabled.newValue);
   });
   observer.observe(document.documentElement, { childList: true, subtree: true,
     attributes: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'aria-label',
       'aria-labelledby', 'aria-disabled', 'disabled', 'id', 'data-testid', 'data-test-id', 'data-automation-id', 'href', 'src'],
     characterData: true });
-  setInterval(tick, 400);
+  setInterval(() => { debugPoll(); tick(); }, 400);
   // Ignore obsolete test preferences; preserve only the user's master ON/OFF.
-  if (storage?.sync) storage.sync.get({ enabled: true }, data => {
+  if (storage?.sync) storage.sync.get({ enabled: true, debugMode: false, exitFullscreenAtEnd: false }, data => {
+    exitFullscreenAtEnd = data.exitFullscreenAtEnd === true;
+    setDebugMode(data.debugMode);
     setEnabled(data.enabled);
   });
   else setEnabled(true);

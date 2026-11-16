@@ -1,9 +1,8 @@
 @echo off
-REM このファイルを sign-firefox.local.bat という名前でコピーしてから、
-REM 下の2行に自分のAPIキー/シークレットを記入してください。
-REM sign-firefox.local.bat は .gitignore 対象なので、GitHubには上がりません。
-
-set AMO_JWT_ISSUER=user:xxxxxxxx:xxx
-set AMO_JWT_SECRET=ここに長い方のシークレットを貼り付け
-
+setlocal DisableDelayedExpansion
+REM Copy this file to sign-firefox.local.bat and replace both placeholders.
+REM Never upload sign-firefox.local.bat to GitHub.
+set "AMO_JWT_ISSUER=user:xxxxxxxx:xxx"
+set "AMO_JWT_SECRET=REPLACE_WITH_YOUR_SECRET"
 call "%~dp0sign-firefox.bat"
+exit /b %errorlevel%
