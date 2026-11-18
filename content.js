@@ -1,7 +1,7 @@
 // Simple Continuous Play — keep OP/ED intact; advance only after native media end.
 (() => {
   'use strict';
-  const VERSION = '1.4.4';
+  const VERSION = '1.4.6';
   // #dv-web-player observed on amazon.co.jp, 2026-09-26. Others: compatibility only.
   const PLAYER = '#dv-web-player, .webPlayerSDKContainer, [aria-label="Web Player"]';
   const CONTROL = 'button, [role="button"], a[href]';
@@ -33,26 +33,32 @@
     .replace(/\s+/g, ' ').trim().toLowerCase();
   let enabled = false;
   let exitFullscreenAtEnd = false, fullscreenExitPending = null;
-  function armFullscreenExit(session) {
+  function armFullscreenExit(session, terminalSample = false) {
     const fs = document.fullscreenElement;
     const rows = episodeRows(), current = session.currentEpisode;
+    const moviePage = !document.getElementById('tab-content-episodes') && !rows.length &&
+      !session.seriesEpisode && !!document.getElementById('dv-web-page-hydration-root');
+    const finalEpisode = current && rows.some(row => row.number === current.number && row.url === current.url) &&
+      !rows.some(row => row.number > current.number);
     if (!enabled || !exitFullscreenAtEnd || !fs?.matches?.(PLAYER) ||
         !fs.contains(session.video) || session.target || session.officialCountdown ||
-        session.cardConflict || session.nativeConflict || !current ||
-        !rows.some(row => row.number === current.number && row.url === current.url) ||
-        rows.some(row => row.number > current.number)) return;
-    fullscreenExitPending = { session, fs, at: Date.now(), hiddenSince: null, url: location.href };
-    trace('fullscreen-exit-armed', session);
+        session.cardConflict || session.nativeConflict || (!moviePage && !finalEpisode) ||
+        (terminalSample && !moviePage)) return;
+    if (fullscreenExitPending?.session === session) return;
+    fullscreenExitPending = { session, fs, at: Date.now(), hiddenSince: null, url: location.href,
+      moviePage, terminalSample };
+    trace('fullscreen-exit-armed', session, { moviePage, terminalSample });
   }
   function checkFullscreenExit() {
     const p = fullscreenExitPending;
     if (!p) return;
     if (!enabled || !exitFullscreenAtEnd || Date.now() - p.at > 15000 ||
         document.fullscreenElement !== p.fs || location.href !== p.url || active !== p.session ||
-        !p.session.completed || p.session.target || p.session.navigated || p.session.officialCountdown) {
+        (!p.session.completed && !p.terminalSample) || p.session.target || p.session.navigated || p.session.officialCountdown ||
+        (p.moviePage && (document.getElementById('tab-content-episodes') || p.session.seriesEpisode))) {
       fullscreenExitPending = null; return;
     }
-    const list = document.getElementById('tab-content-episodes');
+    const list = document.getElementById(p.moviePage ? 'dv-web-page-hydration-root' : 'tab-content-episodes');
     const rect = p.fs.getBoundingClientRect();
     const hidden = getComputedStyle(p.fs).display === 'none' && rect.width === 0 && rect.height === 0;
     if (!hidden || [...document.querySelectorAll(PLAYER)].some(visible) || !list || !visible(list)) {
@@ -158,6 +164,7 @@
       fullscreen: debugElement(document.fullscreenElement),
       fullscreenControl: !fsButton ? 'absent' : /全画面を終了|exit full.?screen/.test(label) ? 'exit' : /全画面|full.?screen/.test(label) ? 'enter' : 'other',
       player: debugElement(root), episodeList: debugElement(list),
+      detailPage: debugElement(document.getElementById('dv-web-page-hydration-root')),
       videos: [...document.querySelectorAll('video')].slice(0, 4).map(v => ({
         element: debugElement(v), time: finite(v.currentTime), duration: finite(v.duration),
         paused: v.paused, ended: v.ended, seeking: v.seeking })), ...extra });
@@ -468,6 +475,7 @@
     })[0] || null;
   }
   function reset(session) {
+    if (fullscreenExitPending?.session === session) fullscreenExitPending = null;
     const now = Date.now(), v = session.video;
     const rows = episodeRows();
     const target = session.target;
@@ -524,6 +532,12 @@
   }
   function sample(session, event) {
     const v = session.video;
+    // Some movies reset their media before dispatching ended. This evidence is
+    // only for fullscreen cleanup, never authorization to advance playback.
+    if (!session.completed && Number.isFinite(v.duration) && v.duration >= 60 &&
+        v.currentTime >= v.duration - 0.5 && v.currentTime <= v.duration + 0.05 &&
+        !v.seeking && !v.paused && location.href === session.url &&
+        (v.currentSrc || v.src) === session.src) armFullscreenExit(session, true);
     const number = x => Number.isFinite(x) ? Math.round(x * 1000) / 1000 : null;
     const media = { duration: number(v.duration), sourceChanged: (v.currentSrc || v.src) !== session.src, connected: v.isConnected, visible: visible(v) };
     const mediaKey = JSON.stringify(media);
